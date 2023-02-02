@@ -122,11 +122,6 @@ class DataPreprocessor:
             else:
                 X.append([x['city_id'] for x in temp_sequence[:-1]])
                 y.append(temp_sequence[-1]['city_id'])
-                # print(temp_sequence[-1][["device_class_0", "device_class_1", "device_class_2", "booker_country_0",
-                #                          "booker_country_1", "booker_country_2", "booker_country_3",
-                #                          "booker_country_4", "Size", "dayofweek_checkin", "dayofmonth_checkin",
-                #                          "month_checkin", "dayofweek_checkout", "dayofmonth_checkout",
-                #                          "month_checkout"]])
                 features.append(temp_sequence[-1][["device_class_0", "device_class_1", "device_class_2", "booker_country_0",
                                          "booker_country_1", "booker_country_2", "booker_country_3",
                                          "booker_country_4", "Size", "dayofweek_checkin", "dayofmonth_checkin",
@@ -169,11 +164,6 @@ class DataPreprocessor:
         return self.df['hotel_id'].nunique()
 
 if __name__ == "__main__":
-
-    # Zrobic embedding layer
-    # layers.Embedding(n_cities, output_dim, n_samples)
-
-
     df = DataPreprocessor(str(Path(get_project_root() + "/data/train_set.csv")))
     X, y, features = df.get_sequences_vectors()
     X = np.expand_dims(X, -1)
@@ -187,7 +177,6 @@ if __name__ == "__main__":
     input2_features = tf.keras.layers.Input((15, ))
 
 
-    # seq_layer = tf.keras.layers.Embedding(df.n_city+1, 128, input_length=20)(input1_sequences)
     seq_layer = tf.keras.layers.LSTM(256, return_sequences=True, activation='tanh')(input1_sequences)
     seq_layer = tf.keras.layers.LSTM(128, return_sequences=True, activation='tanh')(seq_layer)
     seq_layer = tf.keras.layers.LayerNormalization()(seq_layer)
