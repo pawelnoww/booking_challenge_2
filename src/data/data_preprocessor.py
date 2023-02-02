@@ -121,7 +121,7 @@ class DataPreprocessor:
             else:
                 X.append([x['city_id'] for x in temp_sequence[:-1]])
                 y.append(temp_sequence[-1]['city_id'])
-                features.append(row.values)
+                features.append(temp_sequence[-1].values)
                 temp_sequence = [row]
 
         X.append([x['city_id'] for x in temp_sequence[:-1]])
@@ -146,29 +146,34 @@ class DataPreprocessor:
         )
         return np.hstack((seq, features)), np.asarray(y)
 
-    def get_n_cities(self):
+
+    @property
+    def n_city(self):
         return self.df['city_id'].nunique()
 
+    @property
+    def n_hotel(self):
+        return self.df['hotel_id'].nunique()
 
 if __name__ == "__main__":
+
+    # Zrobic embedding layer
+    # layers.Embedding(n_cities, output_dim, n_samples)
+
     df = DataPreprocessor(str(Path(get_project_root() + "/data/train_set.csv")))
-    if not os.path.exists("df.pkl"):
-        with open("df.pkl", "wb") as f:
-            pickle.dump(df, f, pickle.HIGHEST_PROTOCOL)
-    else:
-        with open("df.pkl", "rb") as f:
-            df = pickle.load(f)
+
 
     model = tf.keras.models.Sequential()
+
     model.add(tf.keras.layers.LSTM(256, input_shape=(30, 1), activation='tanh', return_sequences=True))
     model.add(tf.keras.layers.LSTM(128, activation='tanh',))
     model.add(tf.keras.layers.Dense(256, activation='relu'))
     model.add(tf.keras.layers.Dense(128, activation='relu'))
-    model.add(tf.keras.layers.Dense(df.get_n_cities(), activation='softmax'))
+    model.add(tf.keras.layers.Dense(df.n_city, activation='softmax'))
 
     model.compile(optimizer='adam',
-                  metrics=['acc', tf.keras.metrics.SparseTopKCategoricalAccuracy(k=4)],
-                  loss='sparse_categorical_crossentropy')
+                  loss='sparse_categorical_crossentropy',
+                  metrics=[tf.keras.metrics.SparseTopKCategoricalAccuracy(k=4)])
 
 
     X, y = df.get_sequences_vectors()
