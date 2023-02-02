@@ -2,6 +2,7 @@ import copy
 import os
 import pickle
 
+import keras.optimizers
 import numpy as np
 import sklearn.preprocessing
 import tensorflow as tf
@@ -121,30 +122,42 @@ class DataPreprocessor:
             else:
                 X.append([x['city_id'] for x in temp_sequence[:-1]])
                 y.append(temp_sequence[-1]['city_id'])
-                features.append(temp_sequence[-1].values)
+                # print(temp_sequence[-1][["device_class_0", "device_class_1", "device_class_2", "booker_country_0",
+                #                          "booker_country_1", "booker_country_2", "booker_country_3",
+                #                          "booker_country_4", "Size", "dayofweek_checkin", "dayofmonth_checkin",
+                #                          "month_checkin", "dayofweek_checkout", "dayofmonth_checkout",
+                #                          "month_checkout"]])
+                features.append(temp_sequence[-1][["device_class_0", "device_class_1", "device_class_2", "booker_country_0",
+                                         "booker_country_1", "booker_country_2", "booker_country_3",
+                                         "booker_country_4", "Size", "dayofweek_checkin", "dayofmonth_checkin",
+                                         "month_checkin", "dayofweek_checkout", "dayofmonth_checkout",
+                                         "month_checkout"]].values)
                 temp_sequence = [row]
 
         X.append([x['city_id'] for x in temp_sequence[:-1]])
         y.append(temp_sequence[-1]['city_id'])
-        features.append(temp_sequence[-1].values)
+        features.append(temp_sequence[-1][["device_class_0", "device_class_1", "device_class_2", "booker_country_0",
+                                         "booker_country_1", "booker_country_2", "booker_country_3",
+                                         "booker_country_4", "Size", "dayofweek_checkin", "dayofmonth_checkin",
+                                         "month_checkin", "dayofweek_checkout", "dayofmonth_checkout",
+                                         "month_checkout"]].values)
 
-        scaler = sklearn.preprocessing.StandardScaler()
+        scaler = sklearn.preprocessing.MinMaxScaler()
         scaler.fit(features)
         features = scaler.transform(features)
 
-        return (X, y, features)
+        return X, y, features
 
     def get_sequences_vectors(self):
         X, y, features = self.get_list_of_sequences()
-        features = np.asarray(features)
-        seq = tf.keras.preprocessing.sequence.pad_sequences(
+        sequences = tf.keras.preprocessing.sequence.pad_sequences(
             X,
-            maxlen=10,
+            maxlen=20,
             dtype='int32',
             padding='post',
             truncating='post',
         )
-        return np.hstack((seq, features)), np.asarray(y)
+        return np.asarray(sequences), np.asarray(y), np.asarray(features)
 
 
     @property
@@ -160,26 +173,41 @@ if __name__ == "__main__":
     # Zrobic embedding layer
     # layers.Embedding(n_cities, output_dim, n_samples)
 
+
     df = DataPreprocessor(str(Path(get_project_root() + "/data/train_set.csv")))
-
-
-    model = tf.keras.models.Sequential()
-
-    model.add(tf.keras.layers.LSTM(256, input_shape=(30, 1), activation='tanh', return_sequences=True))
-    model.add(tf.keras.layers.LSTM(128, activation='tanh',))
-    model.add(tf.keras.layers.Dense(256, activation='relu'))
-    model.add(tf.keras.layers.Dense(128, activation='relu'))
-    model.add(tf.keras.layers.Dense(df.n_city, activation='softmax'))
-
-    model.compile(optimizer='adam',
-                  loss='sparse_categorical_crossentropy',
-                  metrics=[tf.keras.metrics.SparseTopKCategoricalAccuracy(k=4)])
-
-
-    X, y = df.get_sequences_vectors()
-    print(X.shape)
+    X, y, features = df.get_sequences_vectors()
     X = np.expand_dims(X, -1)
+    # features = np.expand_dims(features, -1)
+
     print(X.shape)
-    # print(X, y)
-    # print(df.get_n_cities())
-    model.fit(X, y, epochs=100, batch_size=4096, validation_split=0.2)
+    print(y.shape)
+    print(features.shape)
+
+    input1_sequences = tf.keras.layers.Input((20, 1))
+    input2_features = tf.keras.layers.Input((15, ))
+
+
+    # seq_layer = tf.keras.layers.Embedding(df.n_city+1, 128, input_length=20)(input1_sequences)
+    seq_layer = tf.keras.layers.LSTM(256, return_sequences=True, activation='tanh')(input1_sequences)
+    seq_layer = tf.keras.layers.LSTM(128, return_sequences=True, activation='tanh')(seq_layer)
+    seq_layer = tf.keras.layers.LayerNormalization()(seq_layer)
+    seq_layer = tf.keras.layers.Dropout(0.1)(seq_layer)
+    seq_layer = tf.keras.layers.GRU(256, return_sequences=True, activation='tanh')(seq_layer)
+    seq_layer = tf.keras.layers.GRU(128, return_sequences=False, activation='tanh')(seq_layer)
+    seq_layer = tf.keras.layers.LayerNormalization()(seq_layer)
+    seq_layer = tf.keras.layers.Dropout(0.1)(seq_layer)
+    seq_layer = tf.keras.layers.Dense(15)(seq_layer)
+
+    merge = tf.keras.layers.Concatenate()([seq_layer, input2_features])
+    hidden = tf.keras.layers.Dense(128, activation='relu')(merge)
+    hidden = tf.keras.layers.Dense(df.n_city, activation='softmax')(hidden)
+
+    model = tf.keras.models.Model(inputs=[input1_sequences, input2_features], outputs=hidden)
+    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor = 'sparse_top_k_categorical_accuracy', factor = 0.3, patience = 3, verbose = 1, min_delta = 1e-4, mode = 'max', min_lr=1e-6)
+    model.compile(loss='sparse_categorical_crossentropy',
+                  metrics=[tf.keras.metrics.SparseTopKCategoricalAccuracy(k=4)],
+                  optimizer='adam'
+                  )
+
+    model.fit([X, features], y, epochs=100, batch_size=1024, validation_split=0.2, callbacks=[reduce_lr])
+
